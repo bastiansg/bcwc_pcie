@@ -41,6 +41,10 @@
 #define FTHD_MIN_HEIGHT 240
 #define FTHD_NUM_FORMATS 2 /* NV16 is disabled for now */
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 7, 0)
+# define VFL_TYPE_VIDEO VFL_TYPE_GRABBER
+#endif
+
 static int fthd_buffer_queue_setup(
     struct vb2_queue *vq,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,4,0)
@@ -309,8 +313,10 @@ static struct vb2_ops vb2_queue_ops = {
 	.start_streaming        = fthd_start_streaming,
 	.stop_streaming         = fthd_stop_streaming,
 	.buf_queue              = fthd_buffer_queue,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,17,0)
 	.wait_prepare           = vb2_ops_wait_prepare,
 	.wait_finish            = vb2_ops_wait_finish,
+#endif
 };
 
 static struct v4l2_file_operations fthd_vdev_fops = {
@@ -695,7 +701,11 @@ int fthd_v4l2_register(struct fthd_private *dev_priv)
 	q->mem_ops = &vb2_dma_sg_memops;
 	q->buf_struct_size = 0;//sizeof(struct vpif_cap_buffer);
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0)
 	q->min_buffers_needed = 1;
+#else
+	q->min_queued_buffers = 1;
+#endif
 	q->lock = &dev_priv->vb2_queue_lock;
 
 	ret = vb2_queue_init(q);
@@ -735,7 +745,7 @@ int fthd_v4l2_register(struct fthd_private *dev_priv)
 			    V4L2_CAP_STREAMING;
 #endif
 	video_set_drvdata(vdev, dev_priv);
-	ret = video_register_device(vdev, VFL_TYPE_GRABBER, -1);
+	ret = video_register_device(vdev, VFL_TYPE_VIDEO, -1);
 	if (ret) {
 		video_device_release(vdev);
 		goto fail_vdev;

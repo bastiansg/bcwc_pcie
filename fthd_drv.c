@@ -70,19 +70,19 @@ static int fthd_pci_reserve_mem(struct fthd_private *dev_priv)
 	/* S2 IO */
 	start = pci_resource_start(dev_priv->pdev, FTHD_PCI_S2_IO);
 	len = pci_resource_len(dev_priv->pdev, FTHD_PCI_S2_IO);
-	dev_priv->s2_io = ioremap_nocache(start, len);
+	dev_priv->s2_io = ioremap(start, len);
 	dev_priv->s2_io_len = len;
 
 	/* S2 MEM */
 	start = pci_resource_start(dev_priv->pdev, FTHD_PCI_S2_MEM);
 	len = pci_resource_len(dev_priv->pdev, FTHD_PCI_S2_MEM);
-	dev_priv->s2_mem = ioremap_nocache(start, len);
+	dev_priv->s2_mem = ioremap(start, len);
 	dev_priv->s2_mem_len = len;
 
 	/* ISP IO */
 	start = pci_resource_start(dev_priv->pdev, FTHD_PCI_ISP_IO);
 	len = pci_resource_len(dev_priv->pdev, FTHD_PCI_ISP_IO);
-	dev_priv->isp_io = ioremap_nocache(start, len);
+	dev_priv->isp_io = ioremap(start, len);
 	dev_priv->isp_io_len = len;
 
 	pr_debug("Allocated S2 regs (BAR %d). %u bytes at 0x%p\n",
@@ -406,7 +406,11 @@ static int fthd_pci_init(struct fthd_private *dev_priv)
 		goto fail_irq;
 
 	dev_info(&pdev->dev, "Setting %ubit DMA mask\n", dev_priv->dma_mask);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,18,0)
 	pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(dev_priv->dma_mask));
+#else
+	dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(dev_priv->dma_mask));
+#endif
 
 	pci_set_master(pdev);
 	pci_set_drvdata(pdev, dev_priv);
