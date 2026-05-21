@@ -547,6 +547,7 @@ static const struct pci_device_id fthd_pci_id_table[] = {
 	{ PCI_DEVICE(0x14e4, 0x1570), 4 },
 	{ 0, },
 };
+MODULE_DEVICE_TABLE(pci, fthd_pci_id_table);
 
 static struct pci_driver fthd_pci_driver = {
 	.name = KBUILD_MODNAME,

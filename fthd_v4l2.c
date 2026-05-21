@@ -45,6 +45,10 @@
 # define VFL_TYPE_VIDEO VFL_TYPE_GRABBER
 #endif
 
+static const struct v4l2_frmsize_discrete fthd_frame_sizes[] = {
+	{ 1280, 720 },
+};
+
 static int fthd_buffer_queue_setup(
     struct vb2_queue *vq,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,4,0)
@@ -67,6 +71,9 @@ static int fthd_buffer_queue_setup(
 	struct v4l2_pix_format *cur_fmt = &dev_priv->fmt.fmt;
 	int i, total_size = 0;
 
+	if (*nbuffers > FTHD_BUFFERS)
+		*nbuffers = FTHD_BUFFERS;
+
 	if (*nplanes)
 		return sizes[0] < (cur_fmt->bytesperline * cur_fmt->height) ? -EINVAL : 0;
 
@@ -87,8 +94,8 @@ static int fthd_buffer_queue_setup(
 	}
 
 	*nbuffers = (4096 * 4096) / total_size;
-	if (*nbuffers > 4)
-		*nbuffers = 4;
+	if (*nbuffers > FTHD_BUFFERS)
+		*nbuffers = FTHD_BUFFERS;
 	if (*nbuffers <= 1)
 		return -ENOMEM;
 	pr_debug("using %d buffers\n", *nbuffers);
@@ -383,10 +390,6 @@ static int fthd_v4l2_ioctl_enum_fmt_vid_cap(struct file *filp, void *priv,
 		fmt->pixelformat = V4L2_PIX_FMT_YUYV;
 		desc = "YUYV";
 		break;
-	case 1:
-		fmt->pixelformat = V4L2_PIX_FMT_YVYU;
-		desc = "YVYU";
-		break;
 	/* We don't support the mplane yet
 	case 2:
 		fmt->pixelformat = V4L2_PIX_FMT_NV16;
@@ -407,8 +410,7 @@ static int fthd_v4l2_adjust_format(struct fthd_private *dev_priv,
 				   struct v4l2_pix_format *pix)
 {
 
-	if (pix->pixelformat != V4L2_PIX_FMT_YUYV &&
-	    pix->pixelformat != V4L2_PIX_FMT_YVYU)
+	if (pix->pixelformat != V4L2_PIX_FMT_YUYV)
 		pix->pixelformat = V4L2_PIX_FMT_YUYV;
 
 	if (pix->width < FTHD_MIN_WIDTH)
@@ -422,7 +424,7 @@ static int fthd_v4l2_adjust_format(struct fthd_private *dev_priv,
 
 	pix->colorspace = V4L2_COLORSPACE_SRGB;
 	pix->field = V4L2_FIELD_NONE;
-	pix->width = ALIGN(pix->width, 7);
+	pix->width = ALIGN(pix->width, 8);
 
 	switch (pix->pixelformat) {
 /*
@@ -432,7 +434,6 @@ static int fthd_v4l2_adjust_format(struct fthd_private *dev_priv,
 		break;
 */
 	case V4L2_PIX_FMT_YUYV:
-	case V4L2_PIX_FMT_YVYU:
 	default:
 		pix->bytesperline = pix->width * 2;
 		pix->sizeimage = pix->bytesperline * pix->height;
@@ -492,7 +493,6 @@ static int fthd_v4l2_ioctl_s_fmt_vid_cap(struct file *filp, void *priv,
 		dev_priv->fmt.planes = 2;
 		break;
 	case V4L2_PIX_FMT_YUYV:
-	case V4L2_PIX_FMT_YVYU:
 		dev_priv->fmt.planes = 1;
 		break;
 	}
@@ -545,20 +545,14 @@ static int fthd_v4l2_ioctl_s_parm(struct file *filp, void *priv,
 static int fthd_v4l2_ioctl_enum_framesizes(struct file *filp, void *priv,
 		struct v4l2_frmsizeenum *sizes)
 {
-	if (sizes->index)
+	if (sizes->pixel_format != V4L2_PIX_FMT_YUYV)
 		return -EINVAL;
 
-	if (sizes->pixel_format != V4L2_PIX_FMT_YUYV &&
-	    sizes->pixel_format != V4L2_PIX_FMT_YVYU)
+	if (sizes->index >= ARRAY_SIZE(fthd_frame_sizes))
 		return -EINVAL;
 
-	sizes->type = V4L2_FRMSIZE_TYPE_STEPWISE;
-	sizes->stepwise.min_width = FTHD_MIN_WIDTH;
-	sizes->stepwise.max_width = FTHD_MAX_WIDTH;
-	sizes->stepwise.min_height = FTHD_MIN_HEIGHT;
-	sizes->stepwise.max_height = FTHD_MAX_HEIGHT;
-	sizes->stepwise.step_width = 8;
-	sizes->stepwise.step_height = 1;
+	sizes->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+	sizes->discrete = fthd_frame_sizes[sizes->index];
 	return 0;
 }
 
@@ -570,23 +564,19 @@ static int fthd_v4l2_ioctl_enum_frameintervals(struct file *filp, void *priv,
 	if (interval->index)
 		return -EINVAL;
 
-	if (interval->pixel_format != V4L2_PIX_FMT_YUYV &&
-	    interval->pixel_format != V4L2_PIX_FMT_YVYU &&
-	    interval->pixel_format != V4L2_PIX_FMT_NV16)
+	if (interval->pixel_format != V4L2_PIX_FMT_YUYV)
 		return -EINVAL;
 
-	if (interval->width & 7
-	    || interval->width > FTHD_MAX_WIDTH
-	    || interval->height > FTHD_MAX_HEIGHT)
+	if (interval->width & 7 ||
+	    interval->width < FTHD_MIN_WIDTH ||
+	    interval->width > FTHD_MAX_WIDTH ||
+	    interval->height < FTHD_MIN_HEIGHT ||
+	    interval->height > FTHD_MAX_HEIGHT)
 		return -EINVAL;
 
-	interval->type = V4L2_FRMIVAL_TYPE_STEPWISE;
-	interval->stepwise.step.numerator = 1;
-	interval->stepwise.step.denominator = 1000;
-	interval->stepwise.min.numerator = 33;
-	interval->stepwise.min.denominator = 1000;
-	interval->stepwise.max.numerator = 500;
-	interval->stepwise.max.denominator = 1000;
+	interval->type = V4L2_FRMIVAL_TYPE_DISCRETE;
+	interval->discrete.numerator = 33;
+	interval->discrete.denominator = 1000;
 	return 0;
 }
 
